@@ -32,6 +32,7 @@ from neutron_lib import constants as lib_const
 
 from neutron_vpnaas._i18n import _, _LE, _LI, _LW
 from neutron_vpnaas.services.vpn import vpn_service
+from neutron_vpnaas.services.vpn.device_drivers import ha
 
 LOG = logging.getLogger(__name__)
 
@@ -92,11 +93,14 @@ class Nol3VPNAgent(manager.Manager):
             self.heartbeat = loopingcall.FixedIntervalLoopingCall(
                 self._report_state)
             self.heartbeat.start(interval=report_interval)
+        
+        #super(Nol3VPNAgent, self).__init__(host=host, conf=conf)
 
         self.service = vpn_service.VPNService(self)
         self.device_drivers = self.service.load_device_drivers(host)
         for driver in self.device_drivers:
             driver.sync(driver.context, [])
+            ha.VPNAgentMixin(agent_rpc=driver.agent_rpc, conf=self.conf, host=host)
 
     def enqueue_state_change(self, router_id, state):
         pass

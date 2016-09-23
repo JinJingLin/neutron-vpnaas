@@ -397,6 +397,11 @@ class IPsecVpnOvnDriverCallBack(base_ipsec.IPsecVpnDriverCallBack):
             return self._IPsecHelper._get_vpn_external_port(host, router_id)
         return None
 
+    def update_ha_vpn_states(self, context, host=None, states=None):
+        LOG.debug('Updating HA vpn states on host %s: %s', host, states)
+        #TODO, then update the state in server side. Need done by Ming
+        #self.vpn_plugin.update_ha_vpn_states(context, states, host)
+
 
 class BaseOvnIPsecVPNDriver(base_ipsec.BaseIPsecVPNDriver):
     def __init__(self, service_plugin):

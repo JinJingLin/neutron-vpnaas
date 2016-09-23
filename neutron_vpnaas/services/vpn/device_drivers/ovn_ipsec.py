@@ -24,6 +24,7 @@ from neutron import context as nctx
 from neutron_vpnaas.services.vpn.common import topics
 from neutron_vpnaas._i18n import _LE, _LI
 
+from neutron_vpnaas.services.vpn.device_drivers import ha_ipsec
 from neutron_vpnaas.services.vpn.device_drivers import ipsec
 from neutron_vpnaas.services.vpn.device_drivers import meter_manager
 from neutron_vpnaas.services.vpn.device_drivers import strongswan_ipsec
@@ -217,6 +218,10 @@ class IPsecOvnDriverApi(ipsec.IPsecVpnDriverApi):
         return cctxt.call(self.admin_ctx, 'find_vpn_port',
                           ptype=ptype, router_id=router_id, host=host)
 
+    def update_ha_vpn_states(self, host, states):
+        cctxt = self.client.prepare()
+        return cctxt.call(self.admin_ctx, 'update_ha_vpn_states',
+                          host=host, states=states)
 
 class OvnSwanDriver(ipsec.IPsecDriver):
 
@@ -231,6 +236,9 @@ class OvnSwanDriver(ipsec.IPsecDriver):
         if self.conf.meter.vpn_meter_enable:
             self.metermgr = meter_manager.MeterManager(self.conf, self.host,
                                                        self.context)
+
+        self.ha_process = ha_ipsec.HAOvnSwanProcess(self, self.conf,
+                                                    self.host)
 
     def prepare_namespace(self, context, **kwargs):
         router = kwargs.get('router', None)
@@ -273,17 +281,21 @@ class OvnSwanDriver(ipsec.IPsecDriver):
         return self.iptables_managers[router]
 
     def destroy_process(self, process_id):
+        if process_id not in self.processes:
+            return
         LOG.info(_LI('process %s is destroyed') % process_id)
         namespace = self.devmgr.get_namespace_name(process_id)
+        process = self.processes[process_id]
+        vpnservice = process.vpnservice
 
         if self.conf.meter.vpn_meter_enable:
-            if process_id in self.processes:
-                process = self.processes[process_id]
-                self.metermgr.update_metering(process, namespace, True)
+            self.metermgr.update_metering(process, namespace, True)
 
         super(OvnSwanDriver, self).destroy_process(process_id)
 
         self.devmgr.del_static_routes(namespace)
+        
+        self.ha_process.delete(vpnservice)
 
     def create_router(self, router):
         pass
@@ -327,6 +339,8 @@ class OvnSwanDriver(ipsec.IPsecDriver):
                     process.update()
 
     def create_process(self, process_id, vpnservice, namespace):
+        self.ha_process.initialize(vpnservice, namespace)
+
         return OvnStrongSwanProcess(
             self.conf,
             process_id,
