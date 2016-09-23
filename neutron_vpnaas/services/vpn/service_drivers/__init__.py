@@ -16,15 +16,12 @@
 import abc
 
 from neutron.common import rpc as n_rpc
-from neutron.common import utils
 from neutron import manager
 from neutron.plugins.common import constants
-from oslo_config import cfg
 from oslo_log import log as logging
-from oslo_utils import importutils
 import oslo_messaging
 import six
-from neutron.db import l3_hascheduler_db
+
 from neutron_vpnaas.db.vpn import vpn_validator
 
 LOG = logging.getLogger(__name__)
@@ -75,11 +72,10 @@ class VpnDriver(object):
         pass
 
 
-class BaseIPsecVpnAgentApi(l3_hascheduler_db.L3_HA_scheduler_db_mixin):
+class BaseIPsecVpnAgentApi(object):
     """Base class for IPSec API to agent."""
 
     def __init__(self, topic, default_version, driver):
-        super(BaseIPsecVpnAgentApi, self).__init__()
         self.topic = topic
         self.driver = driver
         target = oslo_messaging.Target(topic=topic, version=default_version)
@@ -92,29 +88,13 @@ class BaseIPsecVpnAgentApi(l3_hascheduler_db.L3_HA_scheduler_db_mixin):
         This method will find where is the router, and
         dispatch notification for the agent.
         """
-        """Notify all the agents that are hosting the routers."""
-
-        '''
-        if not self.driver.l3_plugin.router_scheduler:
-            self.driver.l3_plugin.router_scheduler = importutils.import_object(
-                cfg.CONF.router_scheduler_driver)
-        '''
         admin_context = context if context.is_admin else context.elevated()
-
-        #if utils.is_extension_supported(
-        #        self.driver.l3_plugin, constants.L3_AGENT_SCHEDULER_EXT_ALIAS):
-        '''
-        if True:
-            self.driver.l3_plugin.schedule_routers(admin_context, [router_id])
-
         if not version:
             version = self.target.version
         l3_agents = self.driver.l3_plugin.get_l3_agents_hosting_routers(
             admin_context, [router_id],
             admin_state_up=True,
             active=True)
-        '''
-        l3_agents = self.get_l3_agents(admin_context,active=True)
         for l3_agent in l3_agents:
             LOG.debug('Notify agent at %(topic)s.%(host)s the message '
                       '%(method)s %(args)s',

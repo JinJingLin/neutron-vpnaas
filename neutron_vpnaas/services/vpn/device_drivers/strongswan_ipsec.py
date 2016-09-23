@@ -14,16 +14,18 @@
 #    under the License.
 
 import os
-import shutil
 
 from oslo_config import cfg
+from oslo_log import log as logging
 
 from neutron.agent.linux import ip_lib
+from neutron.agent.linux import utils
 from neutron.plugins.common import constants
 
 from neutron_vpnaas._i18n import _
 from neutron_vpnaas.services.vpn.device_drivers import ipsec
 
+LOG = logging.getLogger(__name__)
 TEMPLATE_PATH = os.path.dirname(os.path.abspath(__file__))
 
 strongswan_opts = [
@@ -78,8 +80,15 @@ class StrongSwanProcess(ipsec.BaseSwanProcess):
     def __init__(self, conf, process_id, vpnservice, namespace):
         self.DIALECT_MAP['v1'] = 'ikev1'
         self.DIALECT_MAP['v2'] = 'ikev2'
+        self.DIALECT_MAP['sha256'] = 'sha256'
+        self._strongswan_piddir = self._get_strongswan_piddir()
+        LOG.debug("strongswan piddir is '%s'" % (self._strongswan_piddir))
         super(StrongSwanProcess, self).__init__(conf, process_id,
                                                 vpnservice, namespace)
+
+    def _get_strongswan_piddir(self):
+        return utils.execute(
+            cmd=[self.binary, "--piddir"], run_as_root=True).strip()
 
     def _check_status_line(self, line):
         """Parse a line and search for status information.
@@ -104,16 +113,19 @@ class StrongSwanProcess(ipsec.BaseSwanProcess):
         ip_wrapper = ip_lib.IPWrapper(namespace=self.namespace)
         return ip_wrapper.netns.execute(
             [NS_WRAPPER,
-             '--mount_paths=/etc:%s/etc,/var/run:%s/var/run' % (
-                 self.config_dir, self.config_dir),
+             '--mount_paths=/etc:%s/etc,%s:%s/var/run' % (
+                 self.config_dir, self._strongswan_piddir, self.config_dir),
              '--cmd=%s' % ','.join(cmd)],
             check_exit_code=check_exit_code,
             extra_ok_codes=extra_ok_codes)
 
     def copy_and_overwrite(self, from_path, to_path):
+        # NOTE(toabctl): the agent may run as non-root user, so rm/copy as root
         if os.path.exists(to_path):
-            shutil.rmtree(to_path)
-        shutil.copytree(from_path, to_path)
+            utils.execute(
+                cmd=["rm", "-rf", to_path], run_as_root=True)
+        utils.execute(
+            cmd=["cp", "-a", from_path, to_path], run_as_root=True)
 
     def ensure_configs(self):
         """Generate config files which are needed for StrongSwan.

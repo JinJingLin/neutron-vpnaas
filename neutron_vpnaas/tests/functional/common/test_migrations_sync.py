@@ -16,13 +16,13 @@ from oslo_config import cfg
 
 from neutron.db.migration.alembic_migrations import external
 from neutron.db.migration import cli as migration
-from neutron.tests.common import base
 from neutron.tests.functional.db import test_migrations
+from neutron.tests.unit import testlib_api
 
-from neutron_vpnaas.db.migration import alembic_migrations
 from neutron_vpnaas.db.models import head
 
 EXTERNAL_TABLES = set(external.TABLES) - set(external.VPNAAS_TABLES)
+VERSION_TABLE = 'alembic_version_vpnaas'
 
 
 class _TestModelsMigrationsVPNAAS(test_migrations._TestModelsMigrations):
@@ -38,22 +38,22 @@ class _TestModelsMigrationsVPNAAS(test_migrations._TestModelsMigrations):
         return head.get_metadata()
 
     def include_object(self, object_, name, type_, reflected, compare_to):
-        if type_ == 'table' and (
-                        name == alembic_migrations.VPNAAS_VERSION_TABLE or
-                        name in EXTERNAL_TABLES):
+        if type_ == 'table' and (name.startswith('alembic') or
+                                 name == VERSION_TABLE or
+                                 name in EXTERNAL_TABLES):
             return False
-        else:
-            return True
-
-    def get_engine(self):
-        return self.engine
+        if type_ == 'index' and reflected and name.startswith("idx_autoinc_"):
+            return False
+        return True
 
 
-class TestModelsMigrationsMysql(_TestModelsMigrationsVPNAAS,
-                                base.MySQLTestCase):
+class TestModelsMigrationsMysql(testlib_api.MySQLTestCaseMixin,
+                                _TestModelsMigrationsVPNAAS,
+                                testlib_api.SqlTestCaseLight):
     pass
 
 
-class TestModelsMigrationsPsql(_TestModelsMigrationsVPNAAS,
-                               base.PostgreSQLTestCase):
+class TestModelsMigrationsPostgresql(testlib_api.PostgreSQLTestCaseMixin,
+                                     _TestModelsMigrationsVPNAAS,
+                                     testlib_api.SqlTestCaseLight):
     pass
